@@ -39,18 +39,15 @@ namespace System
         ////////////////////////////////////////////////////////////////////////////////
 
         // Creates a new guid from an array of bytes.
-        //
         public Guid(byte[] b)
-        {
-            if (b == null)
-                throw new ArgumentNullException(nameof(b));
-            if (b.Length != 16)
+        // : this(new ReadOnlySpan<byte>(b ?? throw new ArgumentNullException(nameof(b))))
+        { 
+                    if (b.Length != 16)
                 throw new ArgumentException(SR.Format(SR.Arg_GuidArrayCtor, "16"), nameof(b));
-            Contract.EndContractBlock();
 
-            _a = ((int)b[3] << 24) | ((int)b[2] << 16) | ((int)b[1] << 8) | b[0];
-            _b = (short)(((int)b[5] << 8) | b[4]);
-            _c = (short)(((int)b[7] << 8) | b[6]);
+            _a = (b[3] << 24) | (b[2] << 16) | (b[1] << 8) | b[0];
+            _b = (short) ((b[5] << 8) | b[4]);
+            _c = (short) ((b[7] << 8) | b[6]);
             _d = b[8];
             _e = b[9];
             _f = b[10];
@@ -61,6 +58,25 @@ namespace System
             _k = b[15];
         }
 
+        // Creates a new guid from a read-only span.
+        public Guid(ReadOnlySpan<byte> b)
+        {
+            if (b.Length != 16)
+                throw new ArgumentException(SR.Format(SR.Arg_GuidArrayCtor, "16"), nameof(b));
+
+            _a = (b[3] << 24) | (b[2] << 16) | (b[1] << 8) | b[0];
+            _b = (short)((b[5] << 8) | b[4]);
+            _c = (short)((b[7] << 8) | b[6]);
+            _d = b[8];
+            _e = b[9];
+            _f = b[10];
+            _g = b[11];
+            _h = b[12];
+            _i = b[13];
+            _j = b[14];
+            _k = b[15];
+        }
+        
         [CLSCompliant(false)]
         public Guid(uint a, ushort b, ushort c, byte d, byte e, byte f, byte g, byte h, byte i, byte j, byte k)
         {
@@ -76,7 +92,6 @@ namespace System
             _j = j;
             _k = k;
         }
-
 
         // Creates a new GUID initialized to the value represented by the arguments.
         //
@@ -398,7 +413,6 @@ namespace System
             }
         }
 
-
         private static bool TryParseGuid(String g, GuidStyles flags, ref GuidResult result)
         {
             if (g == null)
@@ -510,7 +524,6 @@ namespace System
                 return false;
             }
         }
-
 
         // Check if it's of the form {0xdddddddd,0xdddd,0xdddd,{0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd}}
         private static bool TryParseGuidWithHexPrefix(String guidString, ref GuidResult result)
@@ -995,6 +1008,33 @@ namespace System
             return g;
         }
 
+        // Returns whether bytes are sucessfully written to given span.
+        public bool TryWriteBytes(Span<byte> destination)
+        {
+            if (destination.Length < 16)
+            {
+                return false;
+            }
+
+            destination[0] = (byte)(_a);
+            destination[1] = (byte)(_a >> 8);
+            destination[2] = (byte)(_a >> 16);
+            destination[3] = (byte)(_a >> 24);
+            destination[4] = (byte)(_b);
+            destination[5] = (byte)(_b >> 8);
+            destination[6] = (byte)(_c);
+            destination[7] = (byte)(_c >> 8);
+            destination[8] = _d;
+            destination[9] = _e;
+            destination[10] = _f;
+            destination[11] = _g;
+            destination[12] = _h;
+            destination[13] = _i;
+            destination[14] = _j;
+            destination[15] = _k;
+
+            return true;
+        }
 
         // Returns the guid in "registry" format.
         public override String ToString()
@@ -1232,6 +1272,145 @@ namespace System
             return 9;
         }
 
+        // Fills a char* with the appropriate string. 
+        private unsafe void FormatGuid(char* guidChars, int offset, bool hex, bool dash)
+        {
+            if (hex)
+            {
+                // {0xdddddddd,0xdddd,0xdddd,{0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd}}
+                guidChars[offset++] = '0';
+                guidChars[offset++] = 'x';
+                offset += HexsToChars(guidChars + offset, _a >> 24, _a >> 16);
+                offset += HexsToChars(guidChars + offset, _a >> 8, _a);
+                guidChars[offset++] = ',';
+                guidChars[offset++] = '0';
+                guidChars[offset++] = 'x';
+                offset += HexsToChars(guidChars + offset, _b >> 8, _b);
+                guidChars[offset++] = ',';
+                guidChars[offset++] = '0';
+                guidChars[offset++] = 'x';
+                offset += HexsToChars(guidChars + offset, _c >> 8, _c);
+                guidChars[offset++] = ',';
+                guidChars[offset++] = '{';
+                offset += HexsToCharsHexOutput(guidChars + offset, _d, _e);
+                guidChars[offset++] = ',';
+                offset += HexsToCharsHexOutput(guidChars + offset, _f, _g);
+                guidChars[offset++] = ',';
+                offset += HexsToCharsHexOutput(guidChars + offset, _h, _i);
+                guidChars[offset++] = ',';
+                offset += HexsToCharsHexOutput(guidChars + offset, _j, _k);
+                guidChars[offset++] = '}';
+            }
+            else
+            {
+                // [{|(]dddddddd[-]dddd[-]dddd[-]dddd[-]dddddddddddd[}|)]
+                offset += HexsToChars(guidChars + offset, _a >> 24, _a >> 16);
+                offset += HexsToChars(guidChars + offset, _a >> 8, _a);
+                if (dash)
+                    guidChars[offset++] = '-';
+                offset += HexsToChars(guidChars + offset, _b >> 8, _b);
+                if (dash)
+                    guidChars[offset++] = '-';
+                offset += HexsToChars(guidChars + offset, _c >> 8, _c);
+                if (dash)
+                    guidChars[offset++] = '-';
+                offset += HexsToChars(guidChars + offset, _d, _e);
+                if (dash)
+                    guidChars[offset++] = '-';
+                offset += HexsToChars(guidChars + offset, _f, _g);
+                offset += HexsToChars(guidChars + offset, _h, _i);
+                offset += HexsToChars(guidChars + offset, _j, _k);
+            }
+    }
+
+        // Returns whether the guid is successfully formatted as a span. 
+        public bool TryFormat(Span<char> destination, out int charsWritten, string format = null)
+        {
+            bool dash = true;
+            bool hex = false;
+            bool setBraces = false;
+            bool curly = false;
+            int offset = 0;
+            int guidSize;
+
+            if (format == null || format.Length == 0)
+            {
+                format = "D";
+            }
+                
+            if (format.Length != 1)
+            {
+                // all acceptable format strings are of length 1
+                throw new FormatException(SR.Format_InvalidGuidFormatSpecification);
+            }
+
+            char formatCh = format[0];
+            if (formatCh == 'D' || formatCh == 'd')
+            {
+                guidSize = 36;
+            }
+            else if (formatCh == 'N' || formatCh == 'n')
+            {
+                dash = false;
+                guidSize = 32;
+            }
+            else if (formatCh == 'B' || formatCh == 'b')
+            {
+                setBraces = true;
+                curly = true;
+                guidSize = 38;
+            }
+            else if (formatCh == 'P' || formatCh == 'p')
+            {
+                setBraces = true;
+                guidSize = 38;
+            }
+            else if (formatCh == 'X' || formatCh == 'x')
+            {
+                setBraces = true;
+                curly = true;
+                dash = false;
+                hex = true;
+                guidSize = 68;
+            }
+            else
+            {
+                throw new FormatException(SR.Format_InvalidGuidFormatSpecification);
+            }
+
+            if (destination.Length < guidSize)
+            {
+                charsWritten = 0;
+                return false;
+            }
+
+            // Only sets part of destination after verifying that destination is large enough.
+            if (setBraces)
+            {
+                if (curly)
+                {
+                    destination[offset++] = '{';
+                    destination[guidSize - 1] = '}';
+                }
+                else
+                {
+                    destination[offset++] = '(';
+                    destination[guidSize - 1] = ')';
+                }
+            }
+
+            unsafe
+            {
+                fixed (char* guidChars = &destination.DangerousGetPinnableReference())
+                {
+                    FormatGuid(guidChars, offset, hex, dash);
+                }
+            }
+
+            charsWritten = guidSize;
+            return true;
+        }
+
         // IFormattable interface
         // We currently ignore provider
         public String ToString(String format, IFormatProvider provider)
@@ -1307,48 +1486,7 @@ namespace System
             {
                 fixed (char* guidChars = guidString)
                 {
-                    if (hex)
-                    {
-                        // {0xdddddddd,0xdddd,0xdddd,{0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd,0xdd}}
-                        guidChars[offset++] = '0';
-                        guidChars[offset++] = 'x';
-                        offset += HexsToChars(guidChars + offset, _a >> 24, _a >> 16);
-                        offset += HexsToChars(guidChars + offset, _a >> 8, _a);
-                        guidChars[offset++] = ',';
-                        guidChars[offset++] = '0';
-                        guidChars[offset++] = 'x';
-                        offset += HexsToChars(guidChars + offset, _b >> 8, _b);
-                        guidChars[offset++] = ',';
-                        guidChars[offset++] = '0';
-                        guidChars[offset++] = 'x';
-                        offset += HexsToChars(guidChars + offset, _c >> 8, _c);
-                        guidChars[offset++] = ',';
-                        guidChars[offset++] = '{';
-                        offset += HexsToCharsHexOutput(guidChars + offset, _d, _e);
-                        guidChars[offset++] = ',';
-                        offset += HexsToCharsHexOutput(guidChars + offset, _f, _g);
-                        guidChars[offset++] = ',';
-                        offset += HexsToCharsHexOutput(guidChars + offset, _h, _i);
-                        guidChars[offset++] = ',';
-                        offset += HexsToCharsHexOutput(guidChars + offset, _j, _k);
-                        guidChars[offset++] = '}';
-                    }
-                    else
-                    {
-                        // [{|(]dddddddd[-]dddd[-]dddd[-]dddd[-]dddddddddddd[}|)]
-                        offset += HexsToChars(guidChars + offset, _a >> 24, _a >> 16);
-                        offset += HexsToChars(guidChars + offset, _a >> 8, _a);
-                        if (dash) guidChars[offset++] = '-';
-                        offset += HexsToChars(guidChars + offset, _b >> 8, _b);
-                        if (dash) guidChars[offset++] = '-';
-                        offset += HexsToChars(guidChars + offset, _c >> 8, _c);
-                        if (dash) guidChars[offset++] = '-';
-                        offset += HexsToChars(guidChars + offset, _d, _e);
-                        if (dash) guidChars[offset++] = '-';
-                        offset += HexsToChars(guidChars + offset, _f, _g);
-                        offset += HexsToChars(guidChars + offset, _h, _i);
-                        offset += HexsToChars(guidChars + offset, _j, _k);
-                    }
+                    FormatGuid(guidChars, offset, hex, dash);
                 }
             }
             return guidString;
